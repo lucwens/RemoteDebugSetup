@@ -19,3 +19,7 @@
 #ifndef _AFX_NO_AFXCMN_SUPPORT
 #include <afxcmn.h>         // MFC support for Windows Common Controls
 #endif
+
+#include <afxshellmanager.h>    // MFC shell manager (CShellManager)
+#include <afxvisualmanager.h>          // MFC visual manager (CMFCVisualManager)
+#include <afxvisualmanagerwindows.h>   // CMFCVisualManagerWindows
