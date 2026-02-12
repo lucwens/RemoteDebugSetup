@@ -536,6 +536,57 @@ bool CWinUtils::RemoveNTFSPermissions(LPCTSTR path, LPCTSTR userName)
 }
 
 // ════════════════════════════════════════════════════════════════
+// ── Run a command hidden and wait for it to finish ──
+static DWORD RunHiddenCmd(LPCTSTR commandLine)
+{
+    return CWinUtils::RunHiddenCommand(commandLine);
+}
+
+DWORD CWinUtils::RunHiddenCommand(LPCTSTR commandLine)
+{
+    CString cmd(commandLine);
+    STARTUPINFO si = { sizeof(si) };
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    PROCESS_INFORMATION pi = {};
+
+    if (CreateProcess(nullptr, cmd.GetBuffer(), nullptr, nullptr, FALSE,
+                      CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi))
+    {
+        cmd.ReleaseBuffer();
+        WaitForSingleObject(pi.hProcess, 30000);
+        DWORD exitCode = 0;
+        GetExitCodeProcess(pi.hProcess, &exitCode);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+        return exitCode;
+    }
+    cmd.ReleaseBuffer();
+    return (DWORD)-1;
+}
+
+// ── Enable shared drive mappings between elevated and non-elevated sessions ──
+// Sets the EnableLinkedConnections registry key. Takes effect after re-login.
+static void EnsureLinkedConnections()
+{
+    HKEY hKey = nullptr;
+    if (RegOpenKeyEx(HKEY_LOCAL_MACHINE,
+                     _T("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System"),
+                     0, KEY_READ | KEY_SET_VALUE, &hKey) == ERROR_SUCCESS)
+    {
+        DWORD value = 0, size = sizeof(value);
+        if (RegQueryValueEx(hKey, _T("EnableLinkedConnections"), nullptr, nullptr,
+                            reinterpret_cast<LPBYTE>(&value), &size) != ERROR_SUCCESS
+            || value != 1)
+        {
+            value = 1;
+            RegSetValueEx(hKey, _T("EnableLinkedConnections"), 0, REG_DWORD,
+                          reinterpret_cast<const BYTE*>(&value), sizeof(value));
+        }
+        RegCloseKey(hKey);
+    }
+}
+
 // Drive Mapping
 // ════════════════════════════════════════════════════════════════
 
@@ -558,7 +609,15 @@ bool CWinUtils::MapNetworkDrive(TCHAR driveLetter, LPCTSTR uncPath,
                                        CONNECT_UPDATE_PROFILE);
     localName.ReleaseBuffer();
 
-    return (result == NO_ERROR);
+    if (result != NO_ERROR)
+        return false;
+
+    // Set EnableLinkedConnections for future logins (shares drive mappings
+    // between elevated and non-elevated sessions after reboot).
+    if (IsRunningAsAdmin())
+        EnsureLinkedConnections();
+
+    return true;
 }
 
 bool CWinUtils::UnmapNetworkDrive(TCHAR driveLetter)
@@ -567,6 +626,21 @@ bool CWinUtils::UnmapNetworkDrive(TCHAR driveLetter)
     localName.Format(_T("%c:"), driveLetter);
 
     DWORD result = WNetCancelConnection2(localName, CONNECT_UPDATE_PROFILE, TRUE);
+
+    // Also unmap in non-elevated (Explorer) session when running as admin.
+    // Uses schtasks with /rl limited /it to run in the interactive session.
+    if (IsRunningAsAdmin())
+    {
+        CString cmd;
+        cmd.Format(
+            _T("schtasks.exe /create /tn \"RDS_UnmapDrive\" /tr \"net.exe use %c: /del /y\" /sc once /st 00:00 /f /rl limited /it"),
+            driveLetter);
+        RunHiddenCmd(cmd);
+        RunHiddenCmd(_T("schtasks.exe /run /tn \"RDS_UnmapDrive\""));
+        Sleep(2000);
+        RunHiddenCmd(_T("schtasks.exe /delete /tn \"RDS_UnmapDrive\" /f"));
+    }
+
     return (result == NO_ERROR || result == ERROR_NOT_CONNECTED);
 }
 
@@ -680,7 +754,7 @@ CString CWinUtils::RunPowerShellCommand(LPCTSTR command)
     // Build PowerShell command line
     CString cmdLine;
     cmdLine.Format(
-        _T("powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"& { %s } > '%s' 2>&1\""),
+        _T("powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"& { %s } 2>&1 | Out-File -FilePath '%s' -Encoding ascii\""),
         command, tempFile);
 
     // Execute

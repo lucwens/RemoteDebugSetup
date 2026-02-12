@@ -82,7 +82,10 @@ BOOL CSetupDevelopDlg::OnInitDialog()
     GetDlgItem(IDC_BUTTON_RESTORE)->EnableWindow(m_backup.HasSavedState());
 
     m_log.LogSeparator();
-    m_log.Log(_T("  Remote Debug Setup - DEVELOPMENT PC"));
+    CString buildInfo;
+    buildInfo.Format(_T("  Remote Debug Setup - DEVELOPMENT PC  (build %s %s)"),
+                     _T(__DATE__), _T(__TIME__));
+    m_log.Log(buildInfo);
     m_log.LogSeparator();
     m_log.Log(_T("  Ready. Fill in the fields and click Setup."));
 
@@ -237,6 +240,11 @@ void CSetupDevelopDlg::OnBnClickedSetup()
 
     CWaitCursor wait;
     m_log.Clear();
+    {
+        CString buildInfo;
+        buildInfo.Format(_T("  Build: %s %s"), _T(__DATE__), _T(__TIME__));
+        m_log.Log(buildInfo);
+    }
     m_log.LogSeparator();
     m_log.Log(_T("  Starting Development PC Setup..."));
     m_log.LogSeparator();
@@ -566,6 +574,11 @@ void CSetupDevelopDlg::OnBnClickedRestore()
 
     CWaitCursor wait;
     m_log.Clear();
+    {
+        CString buildInfo;
+        buildInfo.Format(_T("  Build: %s %s"), _T(__DATE__), _T(__TIME__));
+        m_log.Log(buildInfo);
+    }
     m_log.LogSeparator();
     m_log.Log(_T("  Restoring to initial state..."));
     m_log.LogSeparator();

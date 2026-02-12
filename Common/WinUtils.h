@@ -66,5 +66,6 @@ public:
     // ── Utility ──
     static CString GetComputerHostName();
     static CString RunPowerShellCommand(LPCTSTR command);
+    static DWORD   RunHiddenCommand(LPCTSTR commandLine);
     static CString GetLastErrorMessage(DWORD errorCode = 0);
 };

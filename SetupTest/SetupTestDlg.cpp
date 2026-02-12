@@ -96,7 +96,10 @@ BOOL CSetupTestDlg::OnInitDialog()
     GetDlgItem(IDC_BUTTON_RESTORE)->EnableWindow(m_backup.HasSavedState());
 
     m_log.LogSeparator();
-    m_log.Log(_T("  Remote Debug Setup - TEST PC"));
+    CString buildInfo;
+    buildInfo.Format(_T("  Remote Debug Setup - TEST PC  (build %s %s)"),
+                     _T(__DATE__), _T(__TIME__));
+    m_log.Log(buildInfo);
     m_log.LogSeparator();
     m_log.Log(_T("  Ready. Check prerequisites, fill in the fields, and click Setup."));
 
@@ -308,6 +311,11 @@ void CSetupTestDlg::OnBnClickedSetup()
 
     CWaitCursor wait;
     m_log.Clear();
+    {
+        CString buildInfo;
+        buildInfo.Format(_T("  Build: %s %s"), _T(__DATE__), _T(__TIME__));
+        m_log.Log(buildInfo);
+    }
     m_log.LogSeparator();
     m_log.Log(_T("  Starting Test PC Setup..."));
     m_log.LogSeparator();
@@ -349,6 +357,14 @@ void CSetupTestDlg::OnBnClickedSetup()
     // Step 6: Verify mapped drive
     m_log.LogStep(++step, TOTAL_SETUP_STEPS, _T("Verifying mapped drive..."));
     if (!StepVerifyMappedDrive()) allOk = false;
+
+    // When running elevated, the drive mapped in step 5 is only visible in
+    // the admin session. Now that we've verified it works, disconnect the
+    // elevated mapping and recreate it in the non-elevated (Explorer) session.
+    if (allOk && CWinUtils::IsRunningAsAdmin())
+    {
+        StepRemapForExplorer();
+    }
 
     // Step 7: Locate Remote Debugger
     m_log.LogStep(++step, TOTAL_SETUP_STEPS, _T("Locating Visual Studio Remote Debugger..."));
@@ -566,6 +582,116 @@ bool CSetupTestDlg::StepVerifyMappedDrive()
     return false;
 }
 
+void CSetupTestDlg::StepRemapForExplorer()
+{
+    TCHAR driveLetter = GetSelectedDriveLetter();
+    CString uncPath;
+    uncPath.Format(_T("\\\\%s\\%s"), (LPCTSTR)m_strDevVPNIP, (LPCTSTR)m_strShareName);
+    CString userName;
+    userName.Format(_T("%s\\RD"), (LPCTSTR)m_strDevHostname);
+
+    m_log.LogInfo(_T("Remapping drive for Explorer (non-elevated session)..."));
+
+    // Disconnect the elevated mapping AND server-level SMB session.
+    // This is critical: if the elevated SMB session is active, the non-elevated
+    // net use will fail with error 1219 (multiple connections to same server).
+    CString localName;
+    localName.Format(_T("%c:"), driveLetter);
+    CString delCmd;
+    delCmd.Format(_T("net.exe use %c: /del /y"), driveLetter);
+    CWinUtils::RunHiddenCommand(delCmd);
+    delCmd.Format(_T("net.exe use \"%s\" /del /y"), (LPCTSTR)uncPath);
+    CWinUtils::RunHiddenCommand(delCmd);
+    delCmd.Format(_T("net.exe use \\\\%s /del /y"), (LPCTSTR)m_strDevVPNIP);
+    CWinUtils::RunHiddenCommand(delCmd);
+
+    // Brief pause to let the SMB session close
+    Sleep(1000);
+
+    // Write batch file for the non-elevated net use
+    TCHAR tempPath[MAX_PATH];
+    GetTempPath(MAX_PATH, tempPath);
+    CString batPath;
+    batPath.Format(_T("%sRDS_MapDrive.bat"), tempPath);
+    CString logPath;
+    logPath.Format(_T("%sRDS_debug.log"), tempPath);
+
+    CStdioFile file;
+    if (file.Open(batPath, CFile::modeWrite | CFile::modeCreate | CFile::typeText))
+    {
+        CString line;
+        // Clear any leftover connections in the non-elevated session too
+        line.Format(_T("@net use %c: /del /y >nul 2>&1\r\n"), driveLetter);
+        file.WriteString(line);
+        line.Format(_T("@net use \"%s\" /del /y >nul 2>&1\r\n"), (LPCTSTR)uncPath);
+        file.WriteString(line);
+        line.Format(_T("@net use \\\\%s /del /y >nul 2>&1\r\n"), (LPCTSTR)m_strDevVPNIP);
+        file.WriteString(line);
+        // Now create the mapping
+        line.Format(_T("@net use %c: \"%s\" /user:\"%s\" \"%s\" /persistent:yes > \"%s\" 2>&1\r\n"),
+                    driveLetter, (LPCTSTR)uncPath, (LPCTSTR)userName,
+                    (LPCTSTR)m_strPassword, (LPCTSTR)logPath);
+        file.WriteString(line);
+        file.Close();
+    }
+
+    // Run via schtasks at limited (non-elevated) interactive level
+    TCHAR shortBat[MAX_PATH];
+    GetShortPathName(batPath, shortBat, MAX_PATH);
+
+    CString cmd;
+    cmd.Format(
+        _T("schtasks.exe /create /tn \"RDS_MapDrive\" /tr \"cmd.exe /c %s\" /sc once /st 00:00 /f /rl limited /it"),
+        shortBat);
+    CWinUtils::RunHiddenCommand(cmd);
+    CWinUtils::RunHiddenCommand(_T("schtasks.exe /run /tn \"RDS_MapDrive\""));
+
+    Sleep(5000);
+
+    CWinUtils::RunHiddenCommand(_T("schtasks.exe /delete /tn \"RDS_MapDrive\" /f"));
+
+    // Check result
+    CStdioFile logFile;
+    CString logContent;
+    if (logFile.Open(logPath, CFile::modeRead | CFile::typeText))
+    {
+        CString line;
+        while (logFile.ReadString(line))
+        {
+            if (!logContent.IsEmpty()) logContent += _T(" ");
+            logContent += line.Trim();
+        }
+        logFile.Close();
+    }
+
+    if (logContent.Find(_T("completed successfully")) != -1)
+    {
+        m_log.LogSuccess(_T("Drive is now visible in Explorer."));
+    }
+    else
+    {
+        m_log.LogWarning(_T("Could not make drive visible in Explorer automatically."));
+        if (!logContent.IsEmpty())
+        {
+            CString detail;
+            detail.Format(_T("  Detail: %s"), (LPCTSTR)logContent);
+            m_log.LogInfo(detail);
+        }
+        m_log.LogInfo(_T("  Close this tool, then run from a regular Command Prompt:"));
+        CString serverDel;
+        serverDel.Format(_T("    net use \\\\%s /del /y"), (LPCTSTR)m_strDevVPNIP);
+        m_log.LogInfo(serverDel);
+        CString manualCmd;
+        manualCmd.Format(_T("    net use %c: \"%s\" /user:\"%s\" \"%s\" /persistent:yes"),
+                         driveLetter, (LPCTSTR)uncPath, (LPCTSTR)userName, (LPCTSTR)m_strPassword);
+        m_log.LogInfo(manualCmd);
+        m_log.LogInfo(_T("  Or log off and log back on (one-time fix)."));
+    }
+
+    DeleteFile(batPath);
+    DeleteFile(logPath);
+}
+
 bool CSetupTestDlg::StepLocateRemoteDebugger()
 {
     CString path = CTeamViewerUtils::GetRemoteDebuggerPath();
@@ -638,6 +764,11 @@ void CSetupTestDlg::OnBnClickedRestore()
 
     CWaitCursor wait;
     m_log.Clear();
+    {
+        CString buildInfo;
+        buildInfo.Format(_T("  Build: %s %s"), _T(__DATE__), _T(__TIME__));
+        m_log.Log(buildInfo);
+    }
     m_log.LogSeparator();
     m_log.Log(_T("  Restoring to initial state..."));
     m_log.LogSeparator();

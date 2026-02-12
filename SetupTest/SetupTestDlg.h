@@ -68,6 +68,7 @@ protected:
     bool StepVerifyConnectivity();
     bool StepMapSharedFolder();
     bool StepVerifyMappedDrive();
+    void StepRemapForExplorer();
     bool StepLocateRemoteDebugger();
     void StepDisplaySummary();
 
