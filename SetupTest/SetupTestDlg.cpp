@@ -3,6 +3,7 @@
 #include "SetupTestDlg.h"
 #include "../Common/WinUtils.h"
 #include "../Common/TeamViewerUtils.h"
+#include "../Common/SettingsUtils.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -95,6 +96,25 @@ BOOL CSetupTestDlg::OnInitDialog()
 
     // Enable/disable Restore button based on saved state
     GetDlgItem(IDC_BUTTON_RESTORE)->EnableWindow(m_backup.HasSavedState());
+
+    // Load saved settings
+    CString settingsPath = CSettingsUtils::GetSettingsDir() + _T("\\SetupTest.json");
+    std::map<CString, CString> settings;
+    if (CSettingsUtils::Load(settingsPath, settings))
+    {
+        if (settings.count(_T("DevHostname")))   m_strDevHostname = settings[_T("DevHostname")];
+        if (settings.count(_T("DevVPNIP")))      m_strDevVPNIP = settings[_T("DevVPNIP")];
+        if (settings.count(_T("ShareName")))     m_strShareName = settings[_T("ShareName")];
+        if (settings.count(_T("Password")))      m_strPassword = settings[_T("Password")];
+        if (settings.count(_T("DebuggerPort")))  m_strDebuggerPort = settings[_T("DebuggerPort")];
+        if (settings.count(_T("DriveLetter")))
+        {
+            int idx = m_comboDriveLetter.FindStringExact(-1, settings[_T("DriveLetter")]);
+            if (idx >= 0)
+                m_comboDriveLetter.SetCurSel(idx);
+        }
+        UpdateData(FALSE);
+    }
 
     m_log.LogSeparator();
     CString buildInfo;
@@ -363,6 +383,22 @@ void CSetupTestDlg::OnBnClickedSetup()
 {
     if (!ValidateInputs())
         return;
+
+    // Save settings for next launch
+    {
+        std::map<CString, CString> settings;
+        settings[_T("DevHostname")] = m_strDevHostname;
+        settings[_T("DevVPNIP")] = m_strDevVPNIP;
+        settings[_T("ShareName")] = m_strShareName;
+        settings[_T("Password")] = m_strPassword;
+        settings[_T("DebuggerPort")] = m_strDebuggerPort;
+        CString driveSel;
+        int idx = m_comboDriveLetter.GetCurSel();
+        if (idx >= 0) m_comboDriveLetter.GetLBText(idx, driveSel);
+        settings[_T("DriveLetter")] = driveSel;
+        CSettingsUtils::Save(
+            CSettingsUtils::GetSettingsDir() + _T("\\SetupTest.json"), settings);
+    }
 
     GetDlgItem(IDC_BUTTON_SETUP)->EnableWindow(FALSE);
     GetDlgItem(IDC_BUTTON_RESTORE)->EnableWindow(FALSE);

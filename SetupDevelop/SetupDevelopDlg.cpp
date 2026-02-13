@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "SetupDevelop.h"
 #include "SetupDevelopDlg.h"
+#include "../Common/SettingsUtils.h"
 #include "../Common/WinUtils.h"
 #include "../Common/TeamViewerUtils.h"
 #include <ShlObj.h>
@@ -84,6 +85,19 @@ BOOL CSetupDevelopDlg::OnInitDialog()
 
     // Enable/disable Restore button based on saved state
     GetDlgItem(IDC_BUTTON_RESTORE)->EnableWindow(m_backup.HasSavedState());
+
+    // Load saved settings
+    CString settingsPath = CSettingsUtils::GetSettingsDir() + _T("\\SetupDevelop.json");
+    std::map<CString, CString> settings;
+    if (CSettingsUtils::Load(settingsPath, settings))
+    {
+        if (settings.count(_T("TeamViewerID")))  m_strTVID = settings[_T("TeamViewerID")];
+        if (settings.count(_T("Password")))      m_strPassword = settings[_T("Password")];
+        if (settings.count(_T("SharePath")))     m_strSharePath = settings[_T("SharePath")];
+        if (settings.count(_T("ShareName")))     m_strShareName = settings[_T("ShareName")];
+        if (settings.count(_T("VPNSubnet")))     m_strVPNSubnet = settings[_T("VPNSubnet")];
+        UpdateData(FALSE);
+    }
 
     m_log.LogSeparator();
     CString buildInfo;
@@ -286,6 +300,18 @@ void CSetupDevelopDlg::OnBnClickedSetup()
 {
     if (!ValidateInputs())
         return;
+
+    // Save settings for next launch
+    {
+        std::map<CString, CString> settings;
+        settings[_T("TeamViewerID")] = m_strTVID;
+        settings[_T("Password")] = m_strPassword;
+        settings[_T("SharePath")] = m_strSharePath;
+        settings[_T("ShareName")] = m_strShareName;
+        settings[_T("VPNSubnet")] = m_strVPNSubnet;
+        CSettingsUtils::Save(
+            CSettingsUtils::GetSettingsDir() + _T("\\SetupDevelop.json"), settings);
+    }
 
     // Disable buttons during operation
     GetDlgItem(IDC_BUTTON_SETUP)->EnableWindow(FALSE);
