@@ -31,11 +31,13 @@ void CSetupDevelopDlg::DoDataExchange(CDataExchange* pDX)
 {
     CDialogEx::DoDataExchange(pDX);
     DDX_Control(pDX, IDC_STATIC_VPN_STATUS, m_staticVPNStatus);
+    DDX_Control(pDX, IDC_EDIT_TV_ID, m_editTVID);
     DDX_Control(pDX, IDC_EDIT_PASSWORD, m_editPassword);
     DDX_Control(pDX, IDC_EDIT_SHARE_PATH, m_editSharePath);
     DDX_Control(pDX, IDC_EDIT_SHARE_NAME, m_editShareName);
     DDX_Control(pDX, IDC_EDIT_VPN_SUBNET, m_editVPNSubnet);
     DDX_Control(pDX, IDC_EDIT_LOG, m_editLog);
+    DDX_Text(pDX, IDC_EDIT_TV_ID, m_strTVID);
     DDX_Text(pDX, IDC_EDIT_PASSWORD, m_strPassword);
     DDX_Text(pDX, IDC_EDIT_SHARE_PATH, m_strSharePath);
     DDX_Text(pDX, IDC_EDIT_SHARE_NAME, m_strShareName);
@@ -45,6 +47,7 @@ void CSetupDevelopDlg::DoDataExchange(CDataExchange* pDX)
 BEGIN_MESSAGE_MAP(CSetupDevelopDlg, CDialogEx)
     ON_WM_PAINT()
     ON_WM_QUERYDRAGICON()
+    ON_BN_CLICKED(IDC_BUTTON_CONNECT_VPN, &CSetupDevelopDlg::OnBnClickedConnectVPN)
     ON_BN_CLICKED(IDC_BUTTON_BROWSE, &CSetupDevelopDlg::OnBnClickedBrowse)
     ON_BN_CLICKED(IDC_BUTTON_SETUP, &CSetupDevelopDlg::OnBnClickedSetup)
     ON_BN_CLICKED(IDC_BUTTON_RESTORE, &CSetupDevelopDlg::OnBnClickedRestore)
@@ -63,6 +66,7 @@ BOOL CSetupDevelopDlg::OnInitDialog()
 
     // Initialize logging
     m_log.SetLogControl(&m_editLog);
+    m_log.InitFileLog(_T("SetupDevelop"));
 
     // Initialize backup system
     m_backup.Initialize(_T("state_develop"));
@@ -141,6 +145,55 @@ void CSetupDevelopDlg::DetectVPNStatus()
     else
     {
         m_staticVPNStatus.SetWindowText(_T("TeamViewer not installed"));
+    }
+}
+
+// ════════════════════════════════════════════════════════════════
+// Connect VPN Button
+// ════════════════════════════════════════════════════════════════
+
+void CSetupDevelopDlg::OnBnClickedConnectVPN()
+{
+    UpdateData(TRUE);
+
+    m_strTVID.Trim();
+    if (m_strTVID.IsEmpty())
+    {
+        AfxMessageBox(_T("Please enter the Test PC's TeamViewer ID."), MB_OK | MB_ICONWARNING);
+        m_editTVID.SetFocus();
+        return;
+    }
+
+    CTeamViewerUtils::ConnectVPN(m_strTVID);
+    DetectVPNStatus();
+
+    // Copy this PC's VPN IP to clipboard so user can paste it on the Test PC
+    CString vpnIP = CTeamViewerUtils::GetVPNIPAddress();
+    if (!vpnIP.IsEmpty())
+    {
+        if (OpenClipboard())
+        {
+            EmptyClipboard();
+            HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, (vpnIP.GetLength() + 1) * sizeof(TCHAR));
+            if (hMem)
+            {
+                LPTSTR pMem = static_cast<LPTSTR>(GlobalLock(hMem));
+                _tcscpy_s(pMem, vpnIP.GetLength() + 1, vpnIP);
+                GlobalUnlock(hMem);
+#ifdef _UNICODE
+                SetClipboardData(CF_UNICODETEXT, hMem);
+#else
+                SetClipboardData(CF_TEXT, hMem);
+#endif
+            }
+            CloseClipboard();
+        }
+
+        CString msg;
+        msg.Format(_T("VPN IP address %s has been copied to the clipboard.\n\n")
+                   _T("Paste it into the SetupTest program on the Test PC."),
+                   (LPCTSTR)vpnIP);
+        AfxMessageBox(msg, MB_OK | MB_ICONINFORMATION);
     }
 }
 
@@ -240,6 +293,7 @@ void CSetupDevelopDlg::OnBnClickedSetup()
 
     CWaitCursor wait;
     m_log.Clear();
+    m_log.SetOperation(_T("setup"));
     {
         CString buildInfo;
         buildInfo.Format(_T("  Build: %s %s"), _T(__DATE__), _T(__TIME__));
@@ -249,6 +303,14 @@ void CSetupDevelopDlg::OnBnClickedSetup()
     m_log.Log(_T("  Starting Development PC Setup..."));
     m_log.LogSeparator();
     m_log.Log(_T(""));
+
+    // Log configuration
+    {
+        CString cfg;
+        cfg.Format(_T("Config: SharePath=%s, ShareName=%s, VPNSubnet=%s"),
+                   (LPCTSTR)m_strSharePath, (LPCTSTR)m_strShareName, (LPCTSTR)m_strVPNSubnet);
+        m_log.LogInfo(cfg);
+    }
 
     // Save configuration to state
     m_backup.SaveState(_T("share_name"), m_strShareName);
@@ -574,6 +636,7 @@ void CSetupDevelopDlg::OnBnClickedRestore()
 
     CWaitCursor wait;
     m_log.Clear();
+    m_log.SetOperation(_T("restore"));
     {
         CString buildInfo;
         buildInfo.Format(_T("  Build: %s %s"), _T(__DATE__), _T(__TIME__));

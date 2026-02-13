@@ -21,6 +21,9 @@ public:
     // Attempt to install the VPN driver (launches TeamViewer config)
     static bool InstallVPNDriver();
 
+    // Initiate a VPN connection to a partner (launches TeamViewer with instructions)
+    static bool ConnectVPN(const CString& partnerID);
+
     // Check if Visual Studio Remote Debugger (msvsmon.exe) is installed
     static bool IsRemoteDebuggerInstalled();
 

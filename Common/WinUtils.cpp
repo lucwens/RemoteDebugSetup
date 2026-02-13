@@ -457,82 +457,23 @@ bool CWinUtils::DeleteSMBShare(LPCTSTR shareName)
 
 bool CWinUtils::GrantNTFSPermissions(LPCTSTR path, LPCTSTR userName)
 {
-    PACL pOldDacl = nullptr;
-    PSECURITY_DESCRIPTOR pSD = nullptr;
-
-    DWORD result = GetNamedSecurityInfo(
-        const_cast<LPTSTR>(path), SE_FILE_OBJECT,
-        DACL_SECURITY_INFORMATION,
-        nullptr, nullptr, &pOldDacl, nullptr, &pSD);
-
-    if (result != ERROR_SUCCESS)
-        return false;
-
-    EXPLICIT_ACCESS ea = {};
-    ea.grfAccessPermissions = GENERIC_READ | GENERIC_WRITE | GENERIC_EXECUTE | DELETE;
-    ea.grfAccessMode = SET_ACCESS;
-    ea.grfInheritance = SUB_CONTAINERS_AND_OBJECTS_INHERIT;
-    ea.Trustee.TrusteeForm = TRUSTEE_IS_NAME;
-    ea.Trustee.TrusteeType = TRUSTEE_IS_USER;
-    ea.Trustee.ptstrName = const_cast<LPTSTR>(userName);
-
-    PACL pNewDacl = nullptr;
-    result = SetEntriesInAcl(1, &ea, pOldDacl, &pNewDacl);
-    if (result != ERROR_SUCCESS)
-    {
-        if (pSD) LocalFree(pSD);
-        return false;
-    }
-
-    result = SetNamedSecurityInfo(
-        const_cast<LPTSTR>(path), SE_FILE_OBJECT,
-        DACL_SECURITY_INFORMATION,
-        nullptr, nullptr, pNewDacl, nullptr);
-
-    if (pNewDacl) LocalFree(pNewDacl);
-    if (pSD) LocalFree(pSD);
-
-    return (result == ERROR_SUCCESS);
+    // Use icacls to grant Modify with inheritance (OI=Object Inherit, CI=Container Inherit).
+    // This is fast: it sets the inheritable ACE on the root folder only and lets
+    // Windows propagate via normal inheritance, avoiding the stall that
+    // SetNamedSecurityInfo causes when it walks every child object.
+    CString cmd;
+    cmd.Format(_T("icacls.exe \"%s\" /grant \"%s\":(OI)(CI)M"), path, userName);
+    DWORD exitCode = RunHiddenCommand(cmd);
+    return (exitCode == 0);
 }
 
 bool CWinUtils::RemoveNTFSPermissions(LPCTSTR path, LPCTSTR userName)
 {
-    PACL pOldDacl = nullptr;
-    PSECURITY_DESCRIPTOR pSD = nullptr;
-
-    DWORD result = GetNamedSecurityInfo(
-        const_cast<LPTSTR>(path), SE_FILE_OBJECT,
-        DACL_SECURITY_INFORMATION,
-        nullptr, nullptr, &pOldDacl, nullptr, &pSD);
-
-    if (result != ERROR_SUCCESS)
-        return false;
-
-    EXPLICIT_ACCESS ea = {};
-    ea.grfAccessPermissions = GENERIC_ALL;
-    ea.grfAccessMode = REVOKE_ACCESS;
-    ea.grfInheritance = SUB_CONTAINERS_AND_OBJECTS_INHERIT;
-    ea.Trustee.TrusteeForm = TRUSTEE_IS_NAME;
-    ea.Trustee.TrusteeType = TRUSTEE_IS_USER;
-    ea.Trustee.ptstrName = const_cast<LPTSTR>(userName);
-
-    PACL pNewDacl = nullptr;
-    result = SetEntriesInAcl(1, &ea, pOldDacl, &pNewDacl);
-    if (result != ERROR_SUCCESS)
-    {
-        if (pSD) LocalFree(pSD);
-        return false;
-    }
-
-    result = SetNamedSecurityInfo(
-        const_cast<LPTSTR>(path), SE_FILE_OBJECT,
-        DACL_SECURITY_INFORMATION,
-        nullptr, nullptr, pNewDacl, nullptr);
-
-    if (pNewDacl) LocalFree(pNewDacl);
-    if (pSD) LocalFree(pSD);
-
-    return (result == ERROR_SUCCESS);
+    // Use icacls to remove the user's ACE (including inherited entries).
+    CString cmd;
+    cmd.Format(_T("icacls.exe \"%s\" /remove \"%s\""), path, userName);
+    DWORD exitCode = RunHiddenCommand(cmd);
+    return (exitCode == 0);
 }
 
 // ════════════════════════════════════════════════════════════════

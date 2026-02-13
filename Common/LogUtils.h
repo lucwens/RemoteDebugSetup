@@ -1,5 +1,5 @@
 #pragma once
-// LogUtils.h - Logging to CEdit control and optional file
+// LogUtils.h - Logging to CEdit control and NDJSON file
 
 #include <afxwin.h>
 
@@ -12,6 +12,14 @@ public:
     // Set the edit control to receive log messages
     void SetLogControl(CEdit* pEdit);
 
+    // Initialize NDJSON file logging.
+    // Creates a "Log" folder next to the executable and opens a timestamped file.
+    // appName: e.g. "SetupDevelop" or "SetupTest"
+    void InitFileLog(LPCTSTR appName);
+
+    // Set the current operation context (e.g. "setup", "restore")
+    void SetOperation(LPCTSTR operation);
+
     // Log a message with a prefix
     void Log(LPCTSTR message);
     void LogStep(int step, int total, LPCTSTR message);
@@ -22,15 +30,20 @@ public:
     void LogSeparator();
     void Clear();
 
-    // Enable/disable file logging
-    void EnableFileLog(LPCTSTR filePath);
-    void DisableFileLog();
+    // Get the current log file path (empty if file logging not active)
+    CString GetLogFilePath() const { return m_logFilePath; }
 
 private:
     void AppendToEdit(LPCTSTR text);
-    void AppendToFile(LPCTSTR text);
+    void WriteJsonLine(LPCTSTR level, LPCTSTR message, int step = -1, int total = -1);
+
+    static CString JsonEscape(LPCTSTR input);
+    static CString GetISOTimestamp();
 
     CEdit*  m_pEdit;
     CString m_logFilePath;
     bool    m_fileLogEnabled;
+    CString m_appName;
+    CString m_hostname;
+    CString m_operation;
 };

@@ -56,6 +56,7 @@ protected:
     void CheckPrerequisites();
     void DetectVPNStatus();
     void DetectDebuggerStatus();
+    void PromptForDevVPNIP();
 
     // Validation
     bool ValidateInputs();

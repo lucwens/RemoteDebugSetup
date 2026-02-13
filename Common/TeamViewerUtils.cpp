@@ -138,6 +138,41 @@ bool CTeamViewerUtils::InstallVPNDriver()
     return true;
 }
 
+bool CTeamViewerUtils::ConnectVPN(const CString& partnerID)
+{
+    CString tvPath = GetTeamViewerPath();
+    if (tvPath.IsEmpty())
+    {
+        AfxMessageBox(_T("TeamViewer is not installed. Please install TeamViewer first."),
+                      MB_OK | MB_ICONWARNING);
+        return false;
+    }
+
+    if (!IsVPNDriverInstalled())
+    {
+        AfxMessageBox(_T("The TeamViewer VPN driver is not installed.\n\n")
+                      _T("Please install it first via TeamViewer:\n")
+                      _T("Settings > Advanced > Advanced network settings > Install VPN driver"),
+                      MB_OK | MB_ICONWARNING);
+        return false;
+    }
+
+    CString msg;
+    msg.Format(_T("To connect VPN to partner %s:\n\n")
+               _T("1. In TeamViewer, enter Partner ID: %s\n")
+               _T("2. Select 'VPN' from the dropdown next to Connect\n")
+               _T("3. Click 'Connect'\n\n")
+               _T("Would you like to open TeamViewer now?"),
+               (LPCTSTR)partnerID, (LPCTSTR)partnerID);
+
+    if (AfxMessageBox(msg, MB_YESNO | MB_ICONQUESTION) == IDYES)
+    {
+        ShellExecute(nullptr, _T("open"), tvPath, nullptr, nullptr, SW_SHOWNORMAL);
+    }
+
+    return true;
+}
+
 bool CTeamViewerUtils::IsRemoteDebuggerInstalled()
 {
     return !GetRemoteDebuggerPath().IsEmpty();

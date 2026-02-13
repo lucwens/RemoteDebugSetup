@@ -20,6 +20,7 @@ protected:
 
     // DDX Controls
     CStatic m_staticVPNStatus;
+    CEdit   m_editTVID;
     CEdit   m_editPassword;
     CEdit   m_editSharePath;
     CEdit   m_editShareName;
@@ -27,6 +28,7 @@ protected:
     CEdit   m_editLog;
 
     // DDX Data
+    CString m_strTVID;
     CString m_strPassword;
     CString m_strSharePath;
     CString m_strShareName;
@@ -43,6 +45,7 @@ protected:
     // Event handlers
     afx_msg void OnPaint();
     afx_msg HCURSOR OnQueryDragIcon();
+    afx_msg void OnBnClickedConnectVPN();
     afx_msg void OnBnClickedBrowse();
     afx_msg void OnBnClickedSetup();
     afx_msg void OnBnClickedRestore();

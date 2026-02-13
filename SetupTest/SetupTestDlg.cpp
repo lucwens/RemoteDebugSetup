@@ -15,7 +15,7 @@
 CSetupTestDlg::CSetupTestDlg(CWnd* pParent)
     : CDialogEx(IDD_SETUPTEST_DIALOG, pParent)
     , m_strDevHostname(_T("DELL"))
-    , m_strDevVPNIP(_T("7.238.81.240"))
+    , m_strDevVPNIP(_T(""))
     , m_strShareName(_T("CTrack-software"))
     , m_strPassword(_T("a"))
     , m_strDebuggerPort(_T("4026"))
@@ -68,6 +68,7 @@ BOOL CSetupTestDlg::OnInitDialog()
 
     // Initialize logging
     m_log.SetLogControl(&m_editLog);
+    m_log.InitFileLog(_T("SetupTest"));
 
     // Initialize backup system
     m_backup.Initialize(_T("state_test"));
@@ -102,6 +103,9 @@ BOOL CSetupTestDlg::OnInitDialog()
     m_log.Log(buildInfo);
     m_log.LogSeparator();
     m_log.Log(_T("  Ready. Check prerequisites, fill in the fields, and click Setup."));
+
+    // Show startup dialog asking for Dev VPN IP
+    PromptForDevVPNIP();
 
     return TRUE;
 }
@@ -189,6 +193,60 @@ void CSetupTestDlg::DetectDebuggerStatus()
     {
         m_staticDebuggerStatus.SetWindowText(_T("Not found"));
         GetDlgItem(IDC_BUTTON_INSTALL_DEBUGGER)->EnableWindow(TRUE);
+    }
+}
+
+// ════════════════════════════════════════════════════════════════
+// Startup Prompt
+// ════════════════════════════════════════════════════════════════
+
+void CSetupTestDlg::PromptForDevVPNIP()
+{
+    // Try to read a VPN IP from the clipboard (SetupDevelop copies it there)
+    CString clipText;
+    if (OpenClipboard())
+    {
+#ifdef _UNICODE
+        HANDLE hData = GetClipboardData(CF_UNICODETEXT);
+#else
+        HANDLE hData = GetClipboardData(CF_TEXT);
+#endif
+        if (hData)
+        {
+            LPCTSTR pText = static_cast<LPCTSTR>(GlobalLock(hData));
+            if (pText)
+            {
+                clipText = pText;
+                clipText.Trim();
+                GlobalUnlock(hData);
+            }
+        }
+        CloseClipboard();
+    }
+
+    // Check if clipboard looks like a VPN IP (starts with "7.")
+    bool clipHasIP = !clipText.IsEmpty() && clipText.Left(2) == _T("7.");
+
+    CString msg;
+    msg.Format(_T("IMPORTANT: Run SetupDevelop on the Development PC first!\n\n")
+               _T("SetupDevelop will configure the Dev PC and copy its VPN IP\n")
+               _T("address to the clipboard.\n\n")
+               _T("%s"),
+               clipHasIP
+                   ? (LPCTSTR)(CString(_T("A VPN IP was found on the clipboard: ")) + clipText +
+                     _T("\n\nClick OK to use this address."))
+                   : _T("No VPN IP found on the clipboard.\nPlease enter it manually in the 'Dev PC VPN IP' field."));
+
+    AfxMessageBox(msg, MB_OK | MB_ICONINFORMATION);
+
+    if (clipHasIP)
+    {
+        m_strDevVPNIP = clipText;
+        UpdateData(FALSE);
+    }
+    else
+    {
+        m_editDevVPNIP.SetFocus();
     }
 }
 
@@ -311,6 +369,7 @@ void CSetupTestDlg::OnBnClickedSetup()
 
     CWaitCursor wait;
     m_log.Clear();
+    m_log.SetOperation(_T("setup"));
     {
         CString buildInfo;
         buildInfo.Format(_T("  Build: %s %s"), _T(__DATE__), _T(__TIME__));
@@ -322,6 +381,15 @@ void CSetupTestDlg::OnBnClickedSetup()
     m_log.Log(_T(""));
 
     TCHAR driveLetter = GetSelectedDriveLetter();
+
+    // Log configuration
+    {
+        CString cfg;
+        cfg.Format(_T("Config: DevHostname=%s, DevVPNIP=%s, ShareName=%s, DriveLetter=%c:, DebuggerPort=%s"),
+                   (LPCTSTR)m_strDevHostname, (LPCTSTR)m_strDevVPNIP, (LPCTSTR)m_strShareName,
+                   driveLetter, (LPCTSTR)m_strDebuggerPort);
+        m_log.LogInfo(cfg);
+    }
 
     // Save configuration to state
     m_backup.SaveState(_T("dev_hostname"), m_strDevHostname);
@@ -764,6 +832,7 @@ void CSetupTestDlg::OnBnClickedRestore()
 
     CWaitCursor wait;
     m_log.Clear();
+    m_log.SetOperation(_T("restore"));
     {
         CString buildInfo;
         buildInfo.Format(_T("  Build: %s %s"), _T(__DATE__), _T(__TIME__));
