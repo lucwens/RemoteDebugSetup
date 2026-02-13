@@ -721,16 +721,16 @@ bool CSetupDevelopDlg::StepCreateShare()
     if (existed)
     {
         m_log.LogInfo(_T("Share already exists. Updating permissions..."));
-        // Grant permissions via PowerShell
+        // Grant Everyone full access (auth is handled by disabling password-protected sharing)
         CString cmd;
-        cmd.Format(_T("Grant-SmbShareAccess -Name '%s' -AccountName 'RD' -AccessRight Full -Force"),
+        cmd.Format(_T("Grant-SmbShareAccess -Name '%s' -AccountName 'Everyone' -AccessRight Full -Force"),
                    (LPCTSTR)m_strShareName);
         CWinUtils::RunPowerShellCommand(cmd);
-        m_log.LogSuccess(_T("Share permissions updated for RD."));
+        m_log.LogSuccess(_T("Share permissions updated for Everyone."));
         return true;
     }
 
-    if (CWinUtils::CreateSMBShare(m_strShareName, m_strSharePath, _T("RD")))
+    if (CWinUtils::CreateSMBShare(m_strShareName, m_strSharePath, _T("Everyone")))
     {
         CString msg;
         msg.Format(_T("Share '%s' created -> %s"),
@@ -745,13 +745,13 @@ bool CSetupDevelopDlg::StepCreateShare()
 
 bool CSetupDevelopDlg::StepSetNTFSPermissions()
 {
-    if (CWinUtils::GrantNTFSPermissions(m_strSharePath, _T("RD")))
+    if (CWinUtils::GrantNTFSPermissions(m_strSharePath, _T("Everyone")))
     {
-        m_log.LogSuccess(_T("NTFS permissions: RD has Modify access."));
+        m_log.LogSuccess(_T("NTFS permissions: Everyone has Modify access."));
         return true;
     }
 
-    m_log.LogError(_T("Failed to set NTFS permissions for RD."));
+    m_log.LogError(_T("Failed to set NTFS permissions for Everyone."));
     return false;
 }
 
@@ -876,8 +876,8 @@ void CSetupDevelopDlg::RestoreNTFSPermissions()
     CString sharePath = m_backup.LoadState(_T("share_path"));
     if (!sharePath.IsEmpty())
     {
-        CWinUtils::RemoveNTFSPermissions(sharePath, _T("RD"));
-        m_log.LogSuccess(_T("NTFS permissions for RD removed."));
+        CWinUtils::RemoveNTFSPermissions(sharePath, _T("Everyone"));
+        m_log.LogSuccess(_T("NTFS permissions for Everyone removed."));
     }
     else
     {
