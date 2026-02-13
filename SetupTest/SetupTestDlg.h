@@ -41,8 +41,8 @@ protected:
     CRegistryBackup m_backup;
 
     // Internal state
-    static const int TOTAL_SETUP_STEPS = 8;
-    static const int TOTAL_RESTORE_STEPS = 5;
+    static const int TOTAL_SETUP_STEPS = 9;
+    static const int TOTAL_RESTORE_STEPS = 6;
 
     // Event handlers
     afx_msg void OnPaint();
@@ -65,6 +65,7 @@ protected:
     // Setup steps
     bool StepCreateRDAccount();
     bool StepAddRDToAdmins();
+    bool StepSetNTLMv2();
     bool StepCreateDebuggerFirewallRule();
     bool StepVerifyConnectivity();
     bool StepMapSharedFolder();
@@ -76,6 +77,7 @@ protected:
     // Restore steps
     void RestoreMappedDrive();
     void RestoreDebuggerFirewallRule();
+    void RestoreNTLMv2();
     void RestoreRDFromAdmins();
     void RestoreRDAccount();
 

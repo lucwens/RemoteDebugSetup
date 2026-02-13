@@ -410,35 +410,41 @@ void CSetupTestDlg::OnBnClickedSetup()
     m_log.LogStep(++step, TOTAL_SETUP_STEPS, _T("Adding RD to Administrators group..."));
     if (!StepAddRDToAdmins()) allOk = false;
 
-    // Step 3: Create debugger firewall rule
+    // Step 3: Set NTLMv2 authentication
+    m_log.LogStep(++step, TOTAL_SETUP_STEPS, _T("Setting NTLMv2 authentication level..."));
+    if (!StepSetNTLMv2()) allOk = false;
+
+    // Step 4: Create debugger firewall rule
     m_log.LogStep(++step, TOTAL_SETUP_STEPS, _T("Creating Remote Debugger firewall rule..."));
     if (!StepCreateDebuggerFirewallRule()) allOk = false;
 
-    // Step 4: Verify connectivity
+    // Step 5: Verify connectivity
     m_log.LogStep(++step, TOTAL_SETUP_STEPS, _T("Verifying VPN connectivity to Dev PC..."));
     StepVerifyConnectivity();  // Don't fail on this, just warn
 
-    // Step 5: Map shared folder
+    // Step 6: Map shared folder
     m_log.LogStep(++step, TOTAL_SETUP_STEPS, _T("Mapping shared folder..."));
-    if (!StepMapSharedFolder()) allOk = false;
+    bool mapOk = StepMapSharedFolder();
+    if (!mapOk) allOk = false;
 
-    // Step 6: Verify mapped drive
+    // Step 7: Verify mapped drive
     m_log.LogStep(++step, TOTAL_SETUP_STEPS, _T("Verifying mapped drive..."));
     if (!StepVerifyMappedDrive()) allOk = false;
 
     // When running elevated, the drive mapped in step 5 is only visible in
-    // the admin session. Now that we've verified it works, disconnect the
-    // elevated mapping and recreate it in the non-elevated (Explorer) session.
-    if (allOk && CWinUtils::IsRunningAsAdmin())
+    // the admin session. Disconnect the elevated mapping and recreate it in
+    // the non-elevated (Explorer) session. Only requires that the mapping
+    // itself succeeded (step 5), regardless of other step failures.
+    if (mapOk && CWinUtils::IsRunningAsAdmin())
     {
         StepRemapForExplorer();
     }
 
-    // Step 7: Locate Remote Debugger
+    // Step 8: Locate Remote Debugger
     m_log.LogStep(++step, TOTAL_SETUP_STEPS, _T("Locating Visual Studio Remote Debugger..."));
     StepLocateRemoteDebugger();  // Informational only
 
-    // Step 8: Summary
+    // Step 9: Summary
     m_log.LogStep(++step, TOTAL_SETUP_STEPS, _T("Setup complete."));
     StepDisplaySummary();
 
@@ -517,6 +523,51 @@ bool CSetupTestDlg::StepAddRDToAdmins()
     }
 
     m_log.LogError(_T("Failed to add RD to Administrators group."));
+    return false;
+}
+
+bool CSetupTestDlg::StepSetNTLMv2()
+{
+    // Save current LmCompatibilityLevel for restore
+    DWORD currentLevel = 0;
+    DWORD size = sizeof(DWORD);
+    LONG result = RegGetValue(HKEY_LOCAL_MACHINE,
+        _T("SYSTEM\\CurrentControlSet\\Control\\Lsa"),
+        _T("LmCompatibilityLevel"), RRF_RT_REG_DWORD,
+        nullptr, &currentLevel, &size);
+
+    if (result == ERROR_SUCCESS)
+    {
+        CString val;
+        val.Format(_T("%lu"), currentLevel);
+        m_backup.SaveState(_T("lm_compatibility_level"), val);
+    }
+    else
+    {
+        m_backup.SaveState(_T("lm_compatibility_level"), _T("not_set"));
+    }
+
+    // Set to 3 = Send NTLMv2 response only. Refuse LM & NTLM.
+    HKEY hKey;
+    result = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
+        _T("SYSTEM\\CurrentControlSet\\Control\\Lsa"),
+        0, KEY_SET_VALUE, &hKey);
+
+    if (result == ERROR_SUCCESS)
+    {
+        DWORD newLevel = 3;
+        result = RegSetValueEx(hKey, _T("LmCompatibilityLevel"), 0, REG_DWORD,
+            (const BYTE*)&newLevel, sizeof(DWORD));
+        RegCloseKey(hKey);
+
+        if (result == ERROR_SUCCESS)
+        {
+            m_log.LogSuccess(_T("LAN Manager auth set to 'Send NTLMv2 only'."));
+            return true;
+        }
+    }
+
+    m_log.LogError(_T("Failed to set NTLMv2 authentication level."));
     return false;
 }
 
@@ -852,6 +903,9 @@ void CSetupTestDlg::OnBnClickedRestore()
     m_log.LogStep(++step, TOTAL_RESTORE_STEPS, _T("Removing Remote Debugger firewall rule..."));
     RestoreDebuggerFirewallRule();
 
+    m_log.LogStep(++step, TOTAL_RESTORE_STEPS, _T("Restoring NTLMv2 authentication level..."));
+    RestoreNTLMv2();
+
     m_log.LogStep(++step, TOTAL_RESTORE_STEPS, _T("Removing RD from Administrators..."));
     RestoreRDFromAdmins();
 
@@ -910,6 +964,47 @@ void CSetupTestDlg::RestoreDebuggerFirewallRule()
     else
     {
         m_log.LogInfo(_T("Rule existed before setup, leaving in place."));
+    }
+}
+
+void CSetupTestDlg::RestoreNTLMv2()
+{
+    CString savedLevel = m_backup.LoadState(_T("lm_compatibility_level"));
+
+    if (savedLevel == _T("not_set"))
+    {
+        // Key didn't exist before - delete it
+        HKEY hKey;
+        LONG result = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
+            _T("SYSTEM\\CurrentControlSet\\Control\\Lsa"),
+            0, KEY_SET_VALUE, &hKey);
+        if (result == ERROR_SUCCESS)
+        {
+            RegDeleteValue(hKey, _T("LmCompatibilityLevel"));
+            RegCloseKey(hKey);
+        }
+        m_log.LogSuccess(_T("NTLMv2 setting removed (was not set before)."));
+        return;
+    }
+
+    if (!savedLevel.IsEmpty())
+    {
+        DWORD val = (DWORD)_ttol(savedLevel);
+        HKEY hKey;
+        LONG result = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
+            _T("SYSTEM\\CurrentControlSet\\Control\\Lsa"),
+            0, KEY_SET_VALUE, &hKey);
+        if (result == ERROR_SUCCESS)
+        {
+            RegSetValueEx(hKey, _T("LmCompatibilityLevel"), 0, REG_DWORD,
+                (const BYTE*)&val, sizeof(DWORD));
+            RegCloseKey(hKey);
+        }
+        m_log.LogSuccess(_T("NTLMv2 authentication level restored."));
+    }
+    else
+    {
+        m_log.LogInfo(_T("No saved NTLMv2 level, skipping."));
     }
 }
 

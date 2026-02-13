@@ -39,8 +39,8 @@ protected:
     CRegistryBackup m_backup;
 
     // Internal state
-    static const int TOTAL_SETUP_STEPS = 10;
-    static const int TOTAL_RESTORE_STEPS = 8;
+    static const int TOTAL_SETUP_STEPS = 12;
+    static const int TOTAL_RESTORE_STEPS = 10;
 
     // Event handlers
     afx_msg void OnPaint();
@@ -60,6 +60,8 @@ protected:
     bool StepSetVPNAdapterPrivate();
     bool StepEnableNetworkDiscovery();
     bool StepEnableFileSharing();
+    bool StepSetNTLMv2();
+    bool StepDisablePasswordSharing();
     bool StepCreateSMBFirewallRule();
     bool StepCreateDebuggerFirewallRule();
     bool StepCreateShare();
@@ -73,6 +75,8 @@ protected:
     void RestoreSMBFirewallRule();
     void RestoreFileSharing();
     void RestoreNetworkDiscovery();
+    void RestorePasswordSharing();
+    void RestoreNTLMv2();
     void RestoreVPNAdapterProfile();
     void RestoreRDFromAdmins();
     void RestoreRDAccount();

@@ -340,23 +340,31 @@ void CSetupDevelopDlg::OnBnClickedSetup()
     m_log.LogStep(++step, TOTAL_SETUP_STEPS, _T("Enabling File and Printer Sharing..."));
     if (!StepEnableFileSharing()) allOk = false;
 
-    // Step 6: Create SMB firewall rule
+    // Step 6: Set NTLMv2 authentication
+    m_log.LogStep(++step, TOTAL_SETUP_STEPS, _T("Setting NTLMv2 authentication level..."));
+    if (!StepSetNTLMv2()) allOk = false;
+
+    // Step 7: Disable password protected sharing
+    m_log.LogStep(++step, TOTAL_SETUP_STEPS, _T("Configuring password protected sharing..."));
+    if (!StepDisablePasswordSharing()) allOk = false;
+
+    // Step 8: Create SMB firewall rule
     m_log.LogStep(++step, TOTAL_SETUP_STEPS, _T("Creating SMB firewall rule (port 445)..."));
     if (!StepCreateSMBFirewallRule()) allOk = false;
 
-    // Step 7: Create Remote Debugger firewall rule
+    // Step 9: Create Remote Debugger firewall rule
     m_log.LogStep(++step, TOTAL_SETUP_STEPS, _T("Creating Remote Debugger firewall rule (ports 4022-4026)..."));
     if (!StepCreateDebuggerFirewallRule()) allOk = false;
 
-    // Step 8: Create the share
+    // Step 10: Create the share
     m_log.LogStep(++step, TOTAL_SETUP_STEPS, _T("Creating network share..."));
     if (!StepCreateShare()) allOk = false;
 
-    // Step 9: Set NTFS permissions
+    // Step 11: Set NTFS permissions
     m_log.LogStep(++step, TOTAL_SETUP_STEPS, _T("Setting NTFS permissions..."));
     if (!StepSetNTFSPermissions()) allOk = false;
 
-    // Step 10: Display summary
+    // Step 12: Display summary
     m_log.LogStep(++step, TOTAL_SETUP_STEPS, _T("Setup complete."));
     StepDisplaySummary();
 
@@ -542,6 +550,130 @@ bool CSetupDevelopDlg::StepEnableFileSharing()
     return true;
 }
 
+bool CSetupDevelopDlg::StepSetNTLMv2()
+{
+    // Save current LmCompatibilityLevel for restore
+    DWORD currentLevel = 0;
+    DWORD size = sizeof(DWORD);
+    LONG result = RegGetValue(HKEY_LOCAL_MACHINE,
+        _T("SYSTEM\\CurrentControlSet\\Control\\Lsa"),
+        _T("LmCompatibilityLevel"), RRF_RT_REG_DWORD,
+        nullptr, &currentLevel, &size);
+
+    if (result == ERROR_SUCCESS)
+    {
+        CString val;
+        val.Format(_T("%lu"), currentLevel);
+        m_backup.SaveState(_T("lm_compatibility_level"), val);
+    }
+    else
+    {
+        m_backup.SaveState(_T("lm_compatibility_level"), _T("not_set"));
+    }
+
+    // Set to 3 = Send NTLMv2 response only. Refuse LM & NTLM.
+    HKEY hKey;
+    result = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
+        _T("SYSTEM\\CurrentControlSet\\Control\\Lsa"),
+        0, KEY_SET_VALUE, &hKey);
+
+    if (result == ERROR_SUCCESS)
+    {
+        DWORD newLevel = 3;
+        result = RegSetValueEx(hKey, _T("LmCompatibilityLevel"), 0, REG_DWORD,
+            (const BYTE*)&newLevel, sizeof(DWORD));
+        RegCloseKey(hKey);
+
+        if (result == ERROR_SUCCESS)
+        {
+            m_log.LogSuccess(_T("LAN Manager auth set to 'Send NTLMv2 only'."));
+            return true;
+        }
+    }
+
+    m_log.LogError(_T("Failed to set NTLMv2 authentication level."));
+    return false;
+}
+
+bool CSetupDevelopDlg::StepDisablePasswordSharing()
+{
+    // Save current everyoneincludesanonymous for restore
+    DWORD currentVal = 0;
+    DWORD size = sizeof(DWORD);
+    LONG result = RegGetValue(HKEY_LOCAL_MACHINE,
+        _T("SYSTEM\\CurrentControlSet\\Control\\Lsa"),
+        _T("everyoneincludesanonymous"), RRF_RT_REG_DWORD,
+        nullptr, &currentVal, &size);
+
+    if (result == ERROR_SUCCESS)
+    {
+        CString val;
+        val.Format(_T("%lu"), currentVal);
+        m_backup.SaveState(_T("everyone_includes_anonymous"), val);
+    }
+    else
+    {
+        m_backup.SaveState(_T("everyone_includes_anonymous"), _T("not_set"));
+    }
+
+    // Save current restrictnullsessaccess for restore
+    DWORD currentRestrict = 1;
+    size = sizeof(DWORD);
+    result = RegGetValue(HKEY_LOCAL_MACHINE,
+        _T("SYSTEM\\CurrentControlSet\\Services\\LanmanServer\\Parameters"),
+        _T("restrictnullsessaccess"), RRF_RT_REG_DWORD,
+        nullptr, &currentRestrict, &size);
+
+    if (result == ERROR_SUCCESS)
+    {
+        CString val;
+        val.Format(_T("%lu"), currentRestrict);
+        m_backup.SaveState(_T("restrict_null_sess_access"), val);
+    }
+    else
+    {
+        m_backup.SaveState(_T("restrict_null_sess_access"), _T("not_set"));
+    }
+
+    bool ok1 = false, ok2 = false;
+
+    // Set everyoneincludesanonymous = 1
+    HKEY hKey;
+    result = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
+        _T("SYSTEM\\CurrentControlSet\\Control\\Lsa"),
+        0, KEY_SET_VALUE, &hKey);
+    if (result == ERROR_SUCCESS)
+    {
+        DWORD val = 1;
+        result = RegSetValueEx(hKey, _T("everyoneincludesanonymous"), 0, REG_DWORD,
+            (const BYTE*)&val, sizeof(DWORD));
+        RegCloseKey(hKey);
+        ok1 = (result == ERROR_SUCCESS);
+    }
+
+    // Set restrictnullsessaccess = 0
+    result = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
+        _T("SYSTEM\\CurrentControlSet\\Services\\LanmanServer\\Parameters"),
+        0, KEY_SET_VALUE, &hKey);
+    if (result == ERROR_SUCCESS)
+    {
+        DWORD val = 0;
+        result = RegSetValueEx(hKey, _T("restrictnullsessaccess"), 0, REG_DWORD,
+            (const BYTE*)&val, sizeof(DWORD));
+        RegCloseKey(hKey);
+        ok2 = (result == ERROR_SUCCESS);
+    }
+
+    if (ok1 && ok2)
+    {
+        m_log.LogSuccess(_T("Password protected sharing disabled."));
+        return true;
+    }
+
+    m_log.LogWarning(_T("Could not fully disable password protected sharing."));
+    return false;
+}
+
 bool CSetupDevelopDlg::StepCreateSMBFirewallRule()
 {
     LPCTSTR ruleName = _T("SMB over TeamViewer VPN");
@@ -711,6 +843,12 @@ void CSetupDevelopDlg::OnBnClickedRestore()
     m_log.LogStep(++step, TOTAL_RESTORE_STEPS, _T("Restoring Network Discovery..."));
     RestoreNetworkDiscovery();
 
+    m_log.LogStep(++step, TOTAL_RESTORE_STEPS, _T("Restoring password protected sharing..."));
+    RestorePasswordSharing();
+
+    m_log.LogStep(++step, TOTAL_RESTORE_STEPS, _T("Restoring NTLMv2 authentication level..."));
+    RestoreNTLMv2();
+
     m_log.LogStep(++step, TOTAL_RESTORE_STEPS, _T("Restoring VPN adapter profile..."));
     RestoreVPNAdapterProfile();
 
@@ -820,6 +958,91 @@ void CSetupDevelopDlg::RestoreNetworkDiscovery()
     else
     {
         m_log.LogInfo(_T("Network Discovery was already enabled, leaving as is."));
+    }
+}
+
+void CSetupDevelopDlg::RestorePasswordSharing()
+{
+    CString savedAnon = m_backup.LoadState(_T("everyone_includes_anonymous"));
+    CString savedRestrict = m_backup.LoadState(_T("restrict_null_sess_access"));
+
+    if (savedAnon == _T("not_set") && savedRestrict == _T("not_set"))
+    {
+        m_log.LogInfo(_T("Password sharing settings were not set before, skipping."));
+        return;
+    }
+
+    HKEY hKey;
+
+    if (savedAnon != _T("not_set") && !savedAnon.IsEmpty())
+    {
+        DWORD val = (DWORD)_ttol(savedAnon);
+        LONG result = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
+            _T("SYSTEM\\CurrentControlSet\\Control\\Lsa"),
+            0, KEY_SET_VALUE, &hKey);
+        if (result == ERROR_SUCCESS)
+        {
+            RegSetValueEx(hKey, _T("everyoneincludesanonymous"), 0, REG_DWORD,
+                (const BYTE*)&val, sizeof(DWORD));
+            RegCloseKey(hKey);
+        }
+    }
+
+    if (savedRestrict != _T("not_set") && !savedRestrict.IsEmpty())
+    {
+        DWORD val = (DWORD)_ttol(savedRestrict);
+        LONG result = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
+            _T("SYSTEM\\CurrentControlSet\\Services\\LanmanServer\\Parameters"),
+            0, KEY_SET_VALUE, &hKey);
+        if (result == ERROR_SUCCESS)
+        {
+            RegSetValueEx(hKey, _T("restrictnullsessaccess"), 0, REG_DWORD,
+                (const BYTE*)&val, sizeof(DWORD));
+            RegCloseKey(hKey);
+        }
+    }
+
+    m_log.LogSuccess(_T("Password protected sharing restored."));
+}
+
+void CSetupDevelopDlg::RestoreNTLMv2()
+{
+    CString savedLevel = m_backup.LoadState(_T("lm_compatibility_level"));
+
+    if (savedLevel == _T("not_set"))
+    {
+        // Key didn't exist before - delete it
+        HKEY hKey;
+        LONG result = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
+            _T("SYSTEM\\CurrentControlSet\\Control\\Lsa"),
+            0, KEY_SET_VALUE, &hKey);
+        if (result == ERROR_SUCCESS)
+        {
+            RegDeleteValue(hKey, _T("LmCompatibilityLevel"));
+            RegCloseKey(hKey);
+        }
+        m_log.LogSuccess(_T("NTLMv2 setting removed (was not set before)."));
+        return;
+    }
+
+    if (!savedLevel.IsEmpty())
+    {
+        DWORD val = (DWORD)_ttol(savedLevel);
+        HKEY hKey;
+        LONG result = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
+            _T("SYSTEM\\CurrentControlSet\\Control\\Lsa"),
+            0, KEY_SET_VALUE, &hKey);
+        if (result == ERROR_SUCCESS)
+        {
+            RegSetValueEx(hKey, _T("LmCompatibilityLevel"), 0, REG_DWORD,
+                (const BYTE*)&val, sizeof(DWORD));
+            RegCloseKey(hKey);
+        }
+        m_log.LogSuccess(_T("NTLMv2 authentication level restored."));
+    }
+    else
+    {
+        m_log.LogInfo(_T("No saved NTLMv2 level, skipping."));
     }
 }
 
