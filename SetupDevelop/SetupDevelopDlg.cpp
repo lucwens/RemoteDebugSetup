@@ -472,11 +472,54 @@ bool CSetupDevelopDlg::StepSetVPNAdapterPrivate()
         msg.Format(_T("'%s' changed from %s to Private."),
                    (LPCTSTR)vpn.alias, (LPCTSTR)originalCategory);
         m_log.LogSuccess(msg);
-        return true;
+    }
+    else
+    {
+        m_log.LogError(_T("Failed to set VPN adapter to Private."));
+        return false;
     }
 
-    m_log.LogError(_T("Failed to set VPN adapter to Private."));
-    return false;
+    // Create a scheduled task to re-set the VPN adapter to Private at every logon.
+    // Windows resets the VPN adapter network profile to Public after reboot,
+    // which disables Network Discovery and File Sharing.
+
+    // Write a small .ps1 script next to the executable
+    TCHAR exePath[MAX_PATH];
+    GetModuleFileName(nullptr, exePath, MAX_PATH);
+    CString exeDir(exePath);
+    exeDir = exeDir.Left(exeDir.ReverseFind(_T('\\')));
+    CString scriptPath = exeDir + _T("\\RDS_VPNPrivate.ps1");
+
+    CStdioFile scriptFile;
+    if (scriptFile.Open(scriptPath, CFile::modeWrite | CFile::modeCreate | CFile::typeText))
+    {
+        scriptFile.WriteString(
+            _T("# Set TeamViewer VPN adapter to Private network profile\r\n")
+            _T("Get-NetAdapter | Where-Object { $_.InterfaceDescription -like '*TeamViewer*' } | ForEach-Object {\r\n")
+            _T("    Set-NetConnectionProfile -InterfaceIndex $_.ifIndex -NetworkCategory Private\r\n")
+            _T("}\r\n"));
+        scriptFile.Close();
+    }
+
+    CString taskCmd;
+    taskCmd.Format(
+        _T("schtasks.exe /create /tn \"RDS_VPNPrivate\" ")
+        _T("/tr \"powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \\\"%s\\\"\" ")
+        _T("/sc onlogon /rl highest /f"),
+        (LPCTSTR)scriptPath);
+    DWORD exitCode = CWinUtils::RunHiddenCommand(taskCmd);
+
+    if (exitCode == 0)
+    {
+        m_log.LogSuccess(_T("Scheduled task created to keep VPN adapter Private after reboot."));
+    }
+    else
+    {
+        m_log.LogWarning(_T("Could not create logon task. VPN profile may revert to Public after reboot."));
+        m_log.LogInfo(_T("Re-run Setup after reboot to fix."));
+    }
+
+    return true;
 }
 
 bool CSetupDevelopDlg::StepEnableNetworkDiscovery()
@@ -782,6 +825,17 @@ void CSetupDevelopDlg::RestoreNetworkDiscovery()
 
 void CSetupDevelopDlg::RestoreVPNAdapterProfile()
 {
+    // Remove the logon task and script file (safe even if they don't exist)
+    CWinUtils::RunHiddenCommand(_T("schtasks.exe /delete /tn \"RDS_VPNPrivate\" /f"));
+
+    TCHAR exePath[MAX_PATH];
+    GetModuleFileName(nullptr, exePath, MAX_PATH);
+    CString exeDir(exePath);
+    exeDir = exeDir.Left(exeDir.ReverseFind(_T('\\')));
+    DeleteFile(exeDir + _T("\\RDS_VPNPrivate.ps1"));
+
+    m_log.LogSuccess(_T("Logon task 'RDS_VPNPrivate' removed."));
+
     bool wasPrivate = m_backup.LoadStateBool(_T("vpn_adapter_was_private"));
     if (!wasPrivate)
     {
