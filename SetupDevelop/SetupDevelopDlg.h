@@ -25,7 +25,7 @@ protected:
     CEdit   m_editSharePath;
     CEdit   m_editShareName;
     CEdit   m_editVPNSubnet;
-    CEdit   m_editLog;
+    CRichEditCtrl m_editLog;
 
     // DDX Data
     CString m_strTVID;

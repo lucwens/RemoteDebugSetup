@@ -27,7 +27,7 @@ protected:
     CEdit     m_editPassword;
     CComboBox m_comboDriveLetter;
     CEdit     m_editDebuggerPort;
-    CEdit     m_editLog;
+    CRichEditCtrl m_editLog;
 
     // DDX Data
     CString m_strDevHostname;

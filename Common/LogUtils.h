@@ -1,7 +1,8 @@
 #pragma once
-// LogUtils.h - Logging to CEdit control and NDJSON file
+// LogUtils.h - Logging to CRichEditCtrl control and NDJSON file
 
 #include <afxwin.h>
+#include <afxcmn.h>
 
 class CLogUtils
 {
@@ -9,8 +10,8 @@ public:
     CLogUtils();
     ~CLogUtils();
 
-    // Set the edit control to receive log messages
-    void SetLogControl(CEdit* pEdit);
+    // Set the rich-edit control to receive log messages
+    void SetLogControl(CRichEditCtrl* pEdit);
 
     // Initialize NDJSON file logging.
     // Creates a "Log" folder next to the executable and opens a timestamped file.
@@ -34,13 +35,13 @@ public:
     CString GetLogFilePath() const { return m_logFilePath; }
 
 private:
-    void AppendToEdit(LPCTSTR text);
+    void AppendToEdit(LPCTSTR text, COLORREF color = RGB(0, 0, 0));
     void WriteJsonLine(LPCTSTR level, LPCTSTR message, int step = -1, int total = -1);
 
     static CString JsonEscape(LPCTSTR input);
     static CString GetISOTimestamp();
 
-    CEdit*  m_pEdit;
+    CRichEditCtrl* m_pEdit;
     CString m_logFilePath;
     bool    m_fileLogEnabled;
     CString m_appName;

@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "LogUtils.h"
 #include <ShlObj.h>
+#include <Richedit.h>
 
 CLogUtils::CLogUtils()
     : m_pEdit(nullptr)
@@ -12,9 +13,36 @@ CLogUtils::~CLogUtils()
 {
 }
 
-void CLogUtils::SetLogControl(CEdit* pEdit)
+void CLogUtils::SetLogControl(CRichEditCtrl* pEdit)
 {
     m_pEdit = pEdit;
+    if (m_pEdit && ::IsWindow(m_pEdit->GetSafeHwnd()))
+    {
+        m_pEdit->SetBackgroundColor(FALSE, RGB(255, 255, 255));
+
+        // Inherit the dialog font so the rich-edit looks identical to a CEdit
+        CWnd* pParent = m_pEdit->GetParent();
+        if (pParent)
+        {
+            CFont* pFont = pParent->GetFont();
+            if (pFont)
+            {
+                LOGFONT lf = {};
+                pFont->GetLogFont(&lf);
+
+                HDC hDC = ::GetDC(nullptr);
+                int pts = MulDiv(abs(lf.lfHeight), 72, GetDeviceCaps(hDC, LOGPIXELSY));
+                ::ReleaseDC(nullptr, hDC);
+
+                CHARFORMAT2 cf = {};
+                cf.cbSize = sizeof(cf);
+                cf.dwMask = CFM_FACE | CFM_SIZE;
+                cf.yHeight = pts * 20;  // twips
+                _tcscpy_s(cf.szFaceName, lf.lfFaceName);
+                m_pEdit->SetDefaultCharFormat(cf);
+            }
+        }
+    }
 }
 
 void CLogUtils::InitFileLog(LPCTSTR appName)
@@ -90,7 +118,7 @@ void CLogUtils::LogStep(int step, int total, LPCTSTR message)
 {
     CString text;
     text.Format(_T("[%d/%d] %s\r\n"), step, total, message);
-    AppendToEdit(text);
+    AppendToEdit(text, RGB(0, 100, 200));  // blue
     WriteJsonLine(_T("STEP"), message, step, total);
 }
 
@@ -98,7 +126,7 @@ void CLogUtils::LogSuccess(LPCTSTR message)
 {
     CString text;
     text.Format(_T("  OK: %s\r\n"), message);
-    AppendToEdit(text);
+    AppendToEdit(text, RGB(0, 140, 0));  // green
     WriteJsonLine(_T("SUCCESS"), message);
 }
 
@@ -106,7 +134,7 @@ void CLogUtils::LogWarning(LPCTSTR message)
 {
     CString text;
     text.Format(_T("  WARNING: %s\r\n"), message);
-    AppendToEdit(text);
+    AppendToEdit(text, RGB(220, 120, 0));  // orange
     WriteJsonLine(_T("WARNING"), message);
 }
 
@@ -114,7 +142,7 @@ void CLogUtils::LogError(LPCTSTR message)
 {
     CString text;
     text.Format(_T("  ERROR: %s\r\n"), message);
-    AppendToEdit(text);
+    AppendToEdit(text, RGB(200, 0, 0));  // red
     WriteJsonLine(_T("ERROR"), message);
 }
 
@@ -122,7 +150,7 @@ void CLogUtils::LogInfo(LPCTSTR message)
 {
     CString text;
     text.Format(_T("  %s\r\n"), message);
-    AppendToEdit(text);
+    AppendToEdit(text, RGB(128, 128, 128));  // grey
 
     CString trimmed(message);
     trimmed.Trim();
@@ -135,7 +163,7 @@ void CLogUtils::LogInfo(LPCTSTR message)
 void CLogUtils::LogSeparator()
 {
     CString text(_T("======================================================\r\n"));
-    AppendToEdit(text);
+    AppendToEdit(text, RGB(128, 128, 128));  // grey
     // Separators are visual-only, not written to JSON
 }
 
@@ -147,17 +175,28 @@ void CLogUtils::Clear()
     }
 }
 
-void CLogUtils::AppendToEdit(LPCTSTR text)
+void CLogUtils::AppendToEdit(LPCTSTR text, COLORREF color)
 {
     if (!m_pEdit || !::IsWindow(m_pEdit->GetSafeHwnd()))
         return;
 
-    int len = m_pEdit->GetWindowTextLength();
+    // Move caret to end
+    long len = m_pEdit->GetTextLength();
     m_pEdit->SetSel(len, len);
+
+    // Set text color for the insertion
+    CHARFORMAT2 cf = {};
+    cf.cbSize = sizeof(cf);
+    cf.dwMask = CFM_COLOR;
+    cf.crTextColor = color;
+    cf.dwEffects = 0;  // clear CFE_AUTOCOLOR
+    m_pEdit->SetSelectionCharFormat(cf);
+
+    // Insert the text
     m_pEdit->ReplaceSel(text);
 
     // Auto-scroll to bottom
-    m_pEdit->LineScroll(m_pEdit->GetLineCount());
+    m_pEdit->SendMessage(WM_VSCROLL, SB_BOTTOM, 0);
 
     // Process pending messages so the UI updates
     MSG msg;

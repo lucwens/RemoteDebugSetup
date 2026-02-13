@@ -28,6 +28,7 @@ BOOL CSetupDevelopApp::InitInstance()
 
     CWinApp::InitInstance();
 
+    AfxInitRichEdit2();
     AfxEnableControlContainer();
 
     CShellManager* pShellManager = new CShellManager;
