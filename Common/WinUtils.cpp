@@ -462,7 +462,7 @@ bool CWinUtils::GrantNTFSPermissions(LPCTSTR path, LPCTSTR userName)
     // Windows propagate via normal inheritance, avoiding the stall that
     // SetNamedSecurityInfo causes when it walks every child object.
     CString cmd;
-    cmd.Format(_T("icacls.exe \"%s\" /grant \"%s\":(OI)(CI)M"), path, userName);
+    cmd.Format(_T("icacls.exe \"%s\" /grant \"%s:(OI)(CI)M\""), path, userName);
     DWORD exitCode = RunHiddenCommand(cmd);
     return (exitCode == 0);
 }
