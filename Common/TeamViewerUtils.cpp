@@ -217,6 +217,6 @@ void CTeamViewerUtils::OpenRemoteToolsDownloadPage()
 {
     // Open the Microsoft download page for Remote Tools for Visual Studio
     ShellExecute(nullptr, _T("open"),
-                 _T("https://visualstudio.microsoft.com/downloads/#remote-tools-for-visual-studio-2022"),
+                 _T("https://visualstudio.microsoft.com/downloads/#remote-tools-for-visual-studio-2026"),
                  nullptr, nullptr, SW_SHOWNORMAL);
 }
